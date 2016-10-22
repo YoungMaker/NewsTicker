@@ -12,7 +12,7 @@ class Ticker(Frame):
         self._offsety = 0
         self.parent = parent #sets parent frame, the default TK window.
         self.parent.title("TICKER WINDOW")
-        font = tkFont.Font(family="Arial Rounded MT Bold", size=30)
+        font = tkFont.Font(family="Berlin Sans FB", size=30)
         self.label = Label(self, text="", font=font, fg="#606060", bg="#646464")
         self.label.pack()
         self.configure(background="#646464")
