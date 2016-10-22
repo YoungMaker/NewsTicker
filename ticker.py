@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from Tkinter import Frame, Tk, Label
+#from flask import Flask
 import tkFont
 import praw
 import webbrowser
@@ -8,6 +9,7 @@ import ConfigParser
 import os
 import urlparse
 
+#app = Flask(__name__)
 
 #program constants
 MILLISECONDS_MIN = (1000*60)
@@ -18,8 +20,8 @@ STR_LENGTH=65
 STR_SIZE=30
 UNAME="YoungMaker"
 
-CLIENT_ID = '_UU86a8zzGu-9Q'
-CLIENT_SECRET = '_zpcqf3nFbG4q5VB4CnXklLxAGY'
+CLIENT_ID = 'INSERT_APP_ID_HERE'
+CLIENT_SECRET = 'INSERT_SECRET_KEY_HERE'
 REDIRECT_URI = 'http://127.0.0.1:65010/authorize_callback'
 
 
@@ -113,7 +115,7 @@ def connect_to_reddit():
     print "connecting to reddit"
     r = praw.Reddit("Reddit News Ticker")
 
-    posts = r.get_subreddit(SUBREDDIT).get_hot(limit=4)
+    posts = r.get_subreddit(SUBREDDIT).get_hot(limit=NUM_POSTS)
     title_string = ""
     for post in posts: #burns top three posts to single string
         title_string += post.title.upper() +  " " + u"\u25BA" + " "
@@ -127,19 +129,19 @@ def connect_to_reddit_personal():
     authURL = r.get_authorize_url(UNAME, "identity read", True)
 
     webbrowser.open(authURL)
-    #authCode = input("Enter the code: ")
+    authCode = raw_input("Enter the code: ")
 
-    #accInfo = r.get_access_information(authCode)
-    #posts = r.get_top()
-    #title_string = ""
-    #for post in posts:  # burns top three posts to single string
-    #    title_string += post.title.upper() + " " + u"\u25BA" + " "
+    accInfo = r.get_access_information(authCode)
+    posts = r.get_front_page(limit=NUM_POSTS)
+    title_string = ""
+    for post in posts:  # burns top three posts to single string
+        title_string += post.title.upper() + " " + u"\u25BA" + " "
 
-    #start(TextObject(title_string))
+    start(TextObject(title_string))
+    #url = os.environ["REQUEST_URI"]
 
-    url = os.environ["REQUEST_URI"]
-    parsed = urlparse.urlparse(url)
-    print urlparse.parse_qs(parsed.query)['param']
+    #parsed = urlparse.urlparse(url)
+    #print urlparse.parse_qs(parsed.query)['param']
 
 
 def update_reddit():
@@ -184,6 +186,8 @@ def parse_options():
         STR_SIZE = settings['size']
     if settings.has_key('length'):
         STR_LENGTH = settings['length']
+    if settings.has_key('user'):
+        UNAME = settings['user']
 
     print "data = %s, subreddit = %s, num posts = %s, text size= %s, text length= %s" % (PUBLIC_DATA, SUBREDDIT, NUM_POSTS, STR_SIZE, STR_LENGTH)
 
