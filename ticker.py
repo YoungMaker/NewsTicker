@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
 
 from Tkinter import Frame, Tk, Label
-#from flask import Flask
+from flask import Flask, request
 import tkFont
 import praw
 import webbrowser
 import ConfigParser
-import os
-import urlparse
+import threading
 
-#app = Flask(__name__)
+app = Flask(__name__)
 
 #program constants
 MILLISECONDS_MIN = (1000*60)
@@ -18,25 +17,64 @@ SUBREDDIT="news"
 NUM_POSTS=3
 STR_LENGTH=65
 STR_SIZE=30
-UNAME="YoungMaker"
+UNAME="UNAME"
+TOKEN=""
 
-CLIENT_ID = 'INSERT_APP_ID_HERE'
-CLIENT_SECRET = 'INSERT_SECRET_KEY_HERE'
+CLIENT_ID = '7VtgybHThXJPSA'
+CLIENT_SECRET = 'ltt7Bd1d-E4p3liCrjzNudnsHGA'
 REDIRECT_URI = 'http://127.0.0.1:65010/authorize_callback'
 
+thread=None
 
-def start(news_object):
-    global news_tick
-    global root_frame
-    global ticker_window
+@app.route('/')
+def homepage():
+    return "<h3>Login Callback Page</h3>"
 
-    news_tick = news_object
-    root_frame = Tk()
-    root_frame.resizable(0,0)
-    ticker_window = Ticker(root_frame) #create instance of ticker frame window and pass in Tk root window
-    root_frame.after(300, update_text)
-    root_frame.after(MILLISECONDS_MIN*5, update_reddit)
-    root_frame.mainloop()
+@app.route('/authorize_callback')
+def authorized():
+    global thread
+    state = request.args.get('state', '')
+    auth_code = request.args.get('code', '')
+
+    accInfo = main.r.get_access_information(auth_code)
+    print auth_code
+    #todo- save auth code in ini file
+    posts = main.r.get_front_page(limit=4)
+    title_string = ""
+    for post in posts:  # burns top three posts to single string
+        title_string += post.title.upper() + " " + u"\u25BA" + " "
+    main.news_tick = TextObject(title_string)
+    main.start_ticking()
+    return "<h3>Login Success, the ticker is starting</h3>"
+
+
+class Main:
+    #globals
+    r = None
+    news_tick = None
+    ticker_window = None
+    root_frame = None
+    config=None
+
+
+    def __init__(self):
+        pass
+
+    def start(self):
+        self.root_frame = Tk()
+        self.root_frame.resizable(0, 0)
+        self.ticker_window = Ticker(self.root_frame)  # create instance of ticker frame window and pass in Tk root window
+        self.root_frame.mainloop()
+
+    def start_ticking(self):
+        self.root_frame.after(300, update_text)
+        self.root_frame.after(MILLISECONDS_MIN, update_reddit)
+
+    def open_reddit(self, reddit):
+        self.r = reddit
+
+    def setup_config(self):
+        self.config = ConfigParser.ConfigParser()
 
 
 class Ticker(Frame):
@@ -47,7 +85,7 @@ class Ticker(Frame):
         self.parent = parent #sets parent frame, the default TK window.
         self.parent.title("TICKER WINDOW")
         #todo decide on proper font and color scheme
-        font = tkFont.Font(family="Berlin Sans FB", size=STR_SIZE)
+        font = tkFont.Font(family="Franklin Gothic Book", size=STR_SIZE)
         #adapted from http://stackoverflow.com/questions/21840133/how-to-display-text-on-the-screen-without-a-window-using-python
         self.label = Label(self, text="", font=font, fg="#606060", bg="#646464") #sets bg color to 2 offset from the foreground color
         self.label.pack()
@@ -65,9 +103,9 @@ class Ticker(Frame):
     def on_click(self, e):
         self._offsetx = e.x
         self._offsety = e.y
-        #todo- open correct web url on shift+click
-        #url = "http://www.reddit.com/r/news"
-        #webbrowser.open(url, new=2) #opens URL in new tab
+
+    def on_dbl_click(self):
+        pass
 
     def on_drag(self, e):
         x = self.winfo_pointerx() - self._offsetx
@@ -82,7 +120,10 @@ class Ticker(Frame):
 
     def on_exit(self, e):
         #exit application
+        thread.join()
         self.parent.quit()
+        #exit(0)
+        #sys.exit(0)
 
 class TextObject: #for right now this will not support URL clicking. This is just a widget for displaying the text
     index=0
@@ -111,62 +152,98 @@ class TextObject: #for right now this will not support URL clicking. This is jus
 #todo- figure out a way to register click on posts
 
 def connect_to_reddit():
-    #todo- filter sticked posts from subreddits when in public mode
-    print "connecting to reddit"
-    r = praw.Reddit("Reddit News Ticker")
+    global main
 
-    posts = r.get_subreddit(SUBREDDIT).get_hot(limit=NUM_POSTS)
+    #todo- filter sticked posts from subreddits when in public mode
+    main.open_reddit(praw.Reddit("Reddit News Ticker"))
+
+    posts = main.r.get_subreddit(SUBREDDIT).get_hot(limit=4)
     title_string = ""
     for post in posts: #burns top three posts to single string
         title_string += post.title.upper() +  " " + u"\u25BA" + " "
 
-    start(TextObject(title_string))
+    main.start(TextObject(title_string))
 
 def connect_to_reddit_personal():
-    global r
-    r = praw.Reddit("Personalized reddit news ticker with OAuth")
-    r.set_oauth_app_info(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
-    authURL = r.get_authorize_url(UNAME, "identity read", True)
+    global main
 
-    webbrowser.open(authURL)
-    authCode = raw_input("Enter the code: ")
+    main.open_reddit(praw.Reddit("Personalized reddit news ticker with OAuth"))
+    main.r.set_oauth_app_info(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
+    auth_URL = main.r.get_authorize_url(UNAME, "identity read", True)
 
-    accInfo = r.get_access_information(authCode)
-    posts = r.get_front_page(limit=NUM_POSTS)
+    print "starting web"
+    webbrowser.open(auth_URL)
+
+def update_reddit_refresh_key():
+    global main
+
+    print "updating reddit private mode"
+    try:
+        #re-connect to reddit and refresh
+        posts = main.r.get_front_page(limit=4)
+        title_string = ""
+        for post in posts:  # burns top three posts to single string
+            title_string += post.title.upper() + " " + u"\u25BA" + " "
+        main.news_tick.string = title_string
+    except:
+        print "read time out or other error"
+    main.root_frame.after(MILLISECONDS_MIN * 5, update_reddit)  # recurse after calls, update every 5 min
+
+def login_reddit_refresh_key():
+    global main
+
+    main.open_reddit(praw.Reddit("Personalized reddit news ticker with OAuth"))
+    main.r.set_oauth_app_info(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
+
+    main.r.refresh_access_information(refresh_token=TOKEN, update_session=True)
+    posts = main.r.get_front_page(limit=4)
     title_string = ""
     for post in posts:  # burns top three posts to single string
         title_string += post.title.upper() + " " + u"\u25BA" + " "
 
-    start(TextObject(title_string))
-    #url = os.environ["REQUEST_URI"]
-
-    #parsed = urlparse.urlparse(url)
-    #print urlparse.parse_qs(parsed.query)['param']
+    main.start(TextObject(title_string))
 
 
 def update_reddit():
-    connect_to_reddit() #re-connects to reddit and pulls new submissions
-    root_frame.after(MILLISECONDS_MIN*5, update_reddit) #recurse after calls, update every 5 min
+    global main
+    global PUBLIC_DATA
+
+    print "updating reddit"
+    if PUBLIC_DATA.lower() == "false":
+        update_reddit_refresh_key()
+    try:
+        posts = main.r.get_subreddit(SUBREDDIT).get_hot(limit=4)
+        title_string = ""
+        for post in posts: #burns top three posts to single string
+            title_string += post.title.upper() +  " " + u"\u25BA" + " "
+        main.news_tick.string = title_string
+    except:
+        print "read time out or other error"
+    main.root_frame.after(MILLISECONDS_MIN*5, update_reddit) #recurse after calls, update every 5 min
 
 #called once every n milliseconds by the graphics thread, wakes this thread to start changing the text
 def update_text():
-    ticker_window.update_label(news_tick.get_next_fragment())
-    ticker_window.after(300, update_text)
+    global main
+
+    main.ticker_window.update_label(main.news_tick.get_next_fragment())
+    main.ticker_window.after(300, update_text)
 
 
 def config_to_dict(section): #taken from https://wiki.python.org/moin/ConfigParserExamples
+    global main
     dict1 = {}
-    options = Config.options(section)
+    options = main.config.options(section)
     for option in options:
         try:
-            dict1[option] = Config.get(section, option)
+            dict1[option] = main.config.get(section, option)
         except:
             print("exception on %s!" % option)
             dict1[option] = None
     return dict1
 
 def parse_options():
-    Config.read("settings.ini")
+    global main
+    main.config.read("settings.ini")
     settings = config_to_dict("main")
 
     #use global variables
@@ -175,6 +252,7 @@ def parse_options():
     global NUM_POSTS
     global STR_SIZE
     global STR_LENGTH
+    global TOKEN
 
     if settings.has_key('public'):
         PUBLIC_DATA = settings['public']
@@ -188,22 +266,39 @@ def parse_options():
         STR_LENGTH = settings['length']
     if settings.has_key('user'):
         UNAME = settings['user']
+    if settings.has_key("token"):
+        TOKEN = settings['token']
 
-    print "data = %s, subreddit = %s, num posts = %s, text size= %s, text length= %s" % (PUBLIC_DATA, SUBREDDIT, NUM_POSTS, STR_SIZE, STR_LENGTH)
-
-#start window
-r=None
-news_tick=None
-ticker_window=None
-root_frame=None
-
-Config = ConfigParser.ConfigParser()
-parse_options()
-if PUBLIC_DATA is "false" or "False" or "FALSE":
-    connect_to_reddit_personal()
-else:
-    connect_to_reddit()
+    print "data = %s, subreddit = %s, num posts = %s, text size= %s, text length= %s, token = %s" % (PUBLIC_DATA, SUBREDDIT, NUM_POSTS, STR_SIZE, STR_LENGTH, TOKEN)
 
 
+def app_run():
+    app.run(debug=False, port=65010)  # starts webserver for Reddit OAuth callback page
+
+def main_func():
+    global main
+    global PUBLIC_DATA
+
+    main =  Main()
+    main.setup_config()
+    parse_options()
+
+    if PUBLIC_DATA.lower() == "false":
+        if len(TOKEN) > 0:
+            login_reddit_refresh_key()
+        else:
+            global thread
+            thread = threading.Thread(target=app_run, args=[])
+            thread.start()
+            connect_to_reddit_personal()
+
+        main.start()
+        #thread.join()
+    else:
+        connect_to_reddit()
+        main.start_ticking()
+
+if __name__ == '__main__':
+    main_func()
 
 
